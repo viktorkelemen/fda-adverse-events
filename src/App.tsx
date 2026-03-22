@@ -34,9 +34,19 @@ function App() {
     setInteractionResults([]);
 
     try {
-      // Fetch individual drug reports
-      const drugPromises = medications.map((m) => fetchDrugEvents(m.name));
-      const drugs = await Promise.all(drugPromises);
+      // Fetch individual drug reports (partial failures don't block results)
+      const drugSettled = await Promise.allSettled(
+        medications.map((m) => fetchDrugEvents(m.name))
+      );
+      const drugs: DrugEventResult[] = [];
+      const failures: string[] = [];
+      for (const result of drugSettled) {
+        if (result.status === "fulfilled") {
+          drugs.push(result.value);
+        } else {
+          failures.push(result.reason?.message ?? "Unknown error");
+        }
+      }
       setDrugResults(drugs);
 
       // Fetch pairwise interactions
@@ -49,8 +59,20 @@ function App() {
             );
           }
         }
-        const interactions = await Promise.all(interactionPromises);
+        const interactionSettled = await Promise.allSettled(interactionPromises);
+        const interactions: DrugInteractionResult[] = [];
+        for (const result of interactionSettled) {
+          if (result.status === "fulfilled") {
+            interactions.push(result.value);
+          } else {
+            failures.push(result.reason?.message ?? "Unknown error");
+          }
+        }
         setInteractionResults(interactions);
+      }
+
+      if (failures.length > 0) {
+        setError(`Some queries failed: ${failures.join(", ")}`);
       }
     } catch (err) {
       setError(
@@ -62,7 +84,7 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -74,7 +96,7 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-4xl mx-auto px-4 py-8 space-y-8 flex-1 w-full">
         <section>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
             Your Medications
@@ -132,8 +154,10 @@ function App() {
             </div>
           </section>
         )}
+      </main>
 
-        <footer className="text-xs text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 pt-6">
+      <footer className="max-w-4xl mx-auto px-4 pb-8 w-full">
+        <div className="text-xs text-gray-400 dark:text-gray-600 border-t border-gray-200 dark:border-gray-800 pt-6">
           <p>
             Data sourced from the{" "}
             <a
@@ -147,8 +171,8 @@ function App() {
             . This tool is for informational purposes only and does not
             constitute medical advice. Always consult your healthcare provider.
           </p>
-        </footer>
-      </main>
+        </div>
+      </footer>
     </div>
   );
 }

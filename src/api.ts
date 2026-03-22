@@ -6,16 +6,31 @@ export function sanitizeDrugName(name: string): string {
   return name.replace(/["\\]/g, "");
 }
 
+function buildSearchTerm(drugName: string): string {
+  return encodeURIComponent(
+    `patient.drug.medicinalproduct:"${sanitizeDrugName(drugName)}"`
+  );
+}
+
+async function fetchReportCount(search: string): Promise<number> {
+  const url = `${BASE_URL}?search=${search}&limit=1`;
+  const res = await fetch(url);
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.meta?.results?.total ?? 0;
+}
+
 export async function fetchDrugEvents(
   drugName: string
 ): Promise<DrugEventResult> {
-  const safe = sanitizeDrugName(drugName);
-  const query = encodeURIComponent(
-    `patient.drug.medicinalproduct:"${safe}"`
-  );
-  const url = `${BASE_URL}?search=${query}&count=patient.reaction.reactionmeddrapt.exact&limit=20`;
+  const search = buildSearchTerm(drugName);
+  const url = `${BASE_URL}?search=${search}&count=patient.reaction.reactionmeddrapt.exact&limit=20`;
 
-  const res = await fetch(url);
+  const [res, totalReports] = await Promise.all([
+    fetch(url),
+    fetchReportCount(search),
+  ]);
+
   if (!res.ok) {
     throw new Error(`FDA API error: ${res.status}`);
   }
@@ -29,41 +44,24 @@ export async function fetchDrugEvents(
     })
   );
 
-  // Get total report count
-  let totalReports = 0;
-  const metaUrl = `${BASE_URL}?search=${query}&limit=1`;
-  const metaRes = await fetch(metaUrl);
-  if (metaRes.ok) {
-    const metaData = await metaRes.json();
-    totalReports = metaData.meta?.results?.total ?? 0;
-  }
-
-  return {
-    drugName,
-    totalReports,
-    topReactions,
-  };
+  return { drugName, totalReports, topReactions };
 }
 
 export async function fetchDrugInteraction(
   drugA: string,
   drugB: string
 ): Promise<DrugInteractionResult> {
-  const safeA = sanitizeDrugName(drugA);
-  const safeB = sanitizeDrugName(drugB);
-  const termA = encodeURIComponent(`patient.drug.medicinalproduct:"${safeA}"`);
-  const termB = encodeURIComponent(`patient.drug.medicinalproduct:"${safeB}"`);
-  const url = `${BASE_URL}?search=${termA}+AND+${termB}&count=patient.reaction.reactionmeddrapt.exact&limit=10`;
+  const search = `${buildSearchTerm(drugA)}+AND+${buildSearchTerm(drugB)}`;
+  const countUrl = `${BASE_URL}?search=${search}&count=patient.reaction.reactionmeddrapt.exact&limit=10`;
 
-  const res = await fetch(url);
+  const [res, coReportCount] = await Promise.all([
+    fetch(countUrl),
+    fetchReportCount(search),
+  ]);
+
   if (!res.ok) {
     if (res.status === 404) {
-      return {
-        drugA,
-        drugB,
-        coReportedReactions: [],
-        coReportCount: 0,
-      };
+      return { drugA, drugB, coReportedReactions: [], coReportCount: 0 };
     }
     throw new Error(`FDA API error: ${res.status}`);
   }
@@ -77,19 +75,5 @@ export async function fetchDrugInteraction(
     })
   );
 
-  // Get co-report count
-  const metaUrl = `${BASE_URL}?search=${termA}+AND+${termB}&limit=1`;
-  const metaRes = await fetch(metaUrl);
-  let coReportCount = 0;
-  if (metaRes.ok) {
-    const metaData = await metaRes.json();
-    coReportCount = metaData.meta?.results?.total ?? 0;
-  }
-
-  return {
-    drugA,
-    drugB,
-    coReportedReactions,
-    coReportCount,
-  };
+  return { drugA, drugB, coReportedReactions, coReportCount };
 }

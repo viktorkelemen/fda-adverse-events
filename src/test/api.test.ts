@@ -8,6 +8,10 @@ beforeEach(() => {
   mockFetch.mockReset();
 });
 
+function mockOkJson(body: unknown) {
+  return { ok: true, json: async () => body };
+}
+
 describe("sanitizeDrugName", () => {
   it("removes double quotes", () => {
     expect(sanitizeDrugName('aspirin"extra')).toBe("aspirinextra");
@@ -23,23 +27,20 @@ describe("sanitizeDrugName", () => {
 });
 
 describe("fetchDrugEvents", () => {
-  it("returns parsed drug event results", async () => {
-    // First call: count endpoint
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [
-          { term: "NAUSEA", count: 500 },
-          { term: "HEADACHE", count: 300 },
-        ],
-      }),
-    });
-    // Second call: meta endpoint
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+  it("returns parsed drug event results with totalReports", async () => {
+    // count endpoint + report count endpoint run in parallel
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return mockOkJson({
+          results: [
+            { term: "NAUSEA", count: 500 },
+            { term: "HEADACHE", count: 300 },
+          ],
+        });
+      }
+      return mockOkJson({
         meta: { results: { total: 10000 } },
-      }),
+      });
     });
 
     const result = await fetchDrugEvents("ASPIRIN");
@@ -48,10 +49,16 @@ describe("fetchDrugEvents", () => {
     expect(result.totalReports).toBe(10000);
     expect(result.topReactions).toHaveLength(2);
     expect(result.topReactions[0]).toEqual({ term: "NAUSEA", count: 500 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("throws on non-ok response", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+  it("throws on non-ok count response", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return { ok: false, status: 500 };
+      }
+      return mockOkJson({ meta: { results: { total: 0 } } });
+    });
 
     await expect(fetchDrugEvents("ASPIRIN")).rejects.toThrow(
       "FDA API error: 500"
@@ -59,25 +66,19 @@ describe("fetchDrugEvents", () => {
   });
 
   it("returns 0 totalReports when meta request fails", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return mockOkJson({ results: [] });
+      }
+      return { ok: false, status: 500 };
     });
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
 
     const result = await fetchDrugEvents("ASPIRIN");
     expect(result.totalReports).toBe(0);
   });
 
   it("handles missing results gracefully", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({}),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({}),
-    });
+    mockFetch.mockImplementation(async () => mockOkJson({}));
 
     const result = await fetchDrugEvents("UNKNOWN");
     expect(result.topReactions).toEqual([]);
@@ -85,36 +86,27 @@ describe("fetchDrugEvents", () => {
   });
 
   it("encodes drug name in the API URL", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({}),
-    });
+    mockFetch.mockImplementation(async () => mockOkJson({ results: [] }));
 
     await fetchDrugEvents("ASPIRIN");
 
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("patient.drug.medicinalproduct");
-    expect(url).toContain("ASPIRIN");
+    const urls = mockFetch.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(urls.some((u) => u.includes("ASPIRIN"))).toBe(true);
+    expect(urls.some((u) => u.includes("patient.drug.medicinalproduct"))).toBe(true);
   });
 });
 
 describe("fetchDrugInteraction", () => {
   it("returns co-reported reactions", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [{ term: "BLEEDING", count: 150 }],
-      }),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return mockOkJson({
+          results: [{ term: "BLEEDING", count: 150 }],
+        });
+      }
+      return mockOkJson({
         meta: { results: { total: 2000 } },
-      }),
+      });
     });
 
     const result = await fetchDrugInteraction("ASPIRIN", "IBUPROFEN");
@@ -125,10 +117,16 @@ describe("fetchDrugInteraction", () => {
     expect(result.coReportedReactions).toEqual([
       { term: "BLEEDING", count: 150 },
     ]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("returns empty result on 404", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return { ok: false, status: 404 };
+      }
+      return mockOkJson({ meta: { results: { total: 0 } } });
+    });
 
     const result = await fetchDrugInteraction("DRUGX", "DRUGY");
 
@@ -137,21 +135,27 @@ describe("fetchDrugInteraction", () => {
   });
 
   it("throws on non-404 errors", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return { ok: false, status: 500 };
+      }
+      return mockOkJson({ meta: { results: { total: 0 } } });
+    });
 
     await expect(
       fetchDrugInteraction("ASPIRIN", "IBUPROFEN")
     ).rejects.toThrow("FDA API error: 500");
   });
 
-  it("handles meta request failure gracefully", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        results: [{ term: "NAUSEA", count: 50 }],
-      }),
+  it("returns 0 coReportCount when meta request fails", async () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.includes("count=")) {
+        return mockOkJson({
+          results: [{ term: "NAUSEA", count: 50 }],
+        });
+      }
+      return { ok: false, status: 500 };
     });
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
 
     const result = await fetchDrugInteraction("ASPIRIN", "IBUPROFEN");
     expect(result.coReportCount).toBe(0);
@@ -159,19 +163,12 @@ describe("fetchDrugInteraction", () => {
   });
 
   it("uses +AND+ separator (not encoded)", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({}),
-    });
+    mockFetch.mockImplementation(async () => mockOkJson({ results: [] }));
 
     await fetchDrugInteraction("ASPIRIN", "IBUPROFEN");
 
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("+AND+");
-    expect(url).not.toContain("%2BAND%2B");
+    const urls = mockFetch.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(urls.every((u) => u.includes("+AND+"))).toBe(true);
+    expect(urls.every((u) => !u.includes("%2BAND%2B"))).toBe(true);
   });
 });
