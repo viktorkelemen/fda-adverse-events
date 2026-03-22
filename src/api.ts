@@ -41,10 +41,9 @@ export async function fetchDrugInteraction(
   drugA: string,
   drugB: string
 ): Promise<DrugInteractionResult> {
-  const query = encodeURIComponent(
-    `patient.drug.medicinalproduct:"${drugA}"+AND+patient.drug.medicinalproduct:"${drugB}"`
-  );
-  const url = `${BASE_URL}?search=${query}&count=patient.reaction.reactionmeddrapt.exact&limit=10`;
+  const termA = encodeURIComponent(`patient.drug.medicinalproduct:"${drugA}"`);
+  const termB = encodeURIComponent(`patient.drug.medicinalproduct:"${drugB}"`);
+  const url = `${BASE_URL}?search=${termA}+AND+${termB}&count=patient.reaction.reactionmeddrapt.exact&limit=10`;
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -69,7 +68,7 @@ export async function fetchDrugInteraction(
   );
 
   // Get co-report count
-  const metaUrl = `${BASE_URL}?search=${query}&limit=1`;
+  const metaUrl = `${BASE_URL}?search=${termA}+AND+${termB}&limit=1`;
   const metaRes = await fetch(metaUrl);
   let coReportCount = 0;
   if (metaRes.ok) {
