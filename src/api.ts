@@ -2,7 +2,7 @@ import type { AdverseEvent, DrugEventResult, DrugInteractionResult } from "./typ
 
 const BASE_URL = "https://api.fda.gov/drug/event.json";
 
-function sanitizeDrugName(name: string): string {
+export function sanitizeDrugName(name: string): string {
   return name.replace(/["\\]/g, "");
 }
 
