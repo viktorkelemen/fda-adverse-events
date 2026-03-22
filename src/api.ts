@@ -2,11 +2,16 @@ import type { AdverseEvent, DrugEventResult, DrugInteractionResult } from "./typ
 
 const BASE_URL = "https://api.fda.gov/drug/event.json";
 
+function sanitizeDrugName(name: string): string {
+  return name.replace(/["\\]/g, "");
+}
+
 export async function fetchDrugEvents(
   drugName: string
 ): Promise<DrugEventResult> {
+  const safe = sanitizeDrugName(drugName);
   const query = encodeURIComponent(
-    `patient.drug.medicinalproduct:"${drugName}"`
+    `patient.drug.medicinalproduct:"${safe}"`
   );
   const url = `${BASE_URL}?search=${query}&count=patient.reaction.reactionmeddrapt.exact&limit=20`;
 
@@ -25,10 +30,13 @@ export async function fetchDrugEvents(
   );
 
   // Get total report count
+  let totalReports = 0;
   const metaUrl = `${BASE_URL}?search=${query}&limit=1`;
   const metaRes = await fetch(metaUrl);
-  const metaData = await metaRes.json();
-  const totalReports = metaData.meta?.results?.total ?? 0;
+  if (metaRes.ok) {
+    const metaData = await metaRes.json();
+    totalReports = metaData.meta?.results?.total ?? 0;
+  }
 
   return {
     drugName,
@@ -41,8 +49,10 @@ export async function fetchDrugInteraction(
   drugA: string,
   drugB: string
 ): Promise<DrugInteractionResult> {
-  const termA = encodeURIComponent(`patient.drug.medicinalproduct:"${drugA}"`);
-  const termB = encodeURIComponent(`patient.drug.medicinalproduct:"${drugB}"`);
+  const safeA = sanitizeDrugName(drugA);
+  const safeB = sanitizeDrugName(drugB);
+  const termA = encodeURIComponent(`patient.drug.medicinalproduct:"${safeA}"`);
+  const termB = encodeURIComponent(`patient.drug.medicinalproduct:"${safeB}"`);
   const url = `${BASE_URL}?search=${termA}+AND+${termB}&count=patient.reaction.reactionmeddrapt.exact&limit=10`;
 
   const res = await fetch(url);

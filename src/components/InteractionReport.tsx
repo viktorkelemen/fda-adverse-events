@@ -5,7 +5,7 @@ interface Props {
 }
 
 export function InteractionReport({ result }: Props) {
-  if (result.coReportCount === 0) {
+  if (result.coReportedReactions.length === 0) {
     return (
       <div className="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-4">
         <p className="text-green-800 dark:text-green-200 text-sm">
