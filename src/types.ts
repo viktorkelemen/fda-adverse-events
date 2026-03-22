@@ -20,3 +20,13 @@ export interface DrugInteractionResult {
   coReportedReactions: AdverseEvent[];
   coReportCount: number;
 }
+
+export interface DrugLabelResult {
+  drugName: string;
+  brandName: string | null;
+  genericName: string | null;
+  adverseReactions: string | null;
+  warnings: string | null;
+  contraindications: string | null;
+  drugInteractions: string | null;
+}

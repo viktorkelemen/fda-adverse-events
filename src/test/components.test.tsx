@@ -5,6 +5,11 @@ import { MedicationInput } from "../components/MedicationInput";
 import { DrugReport } from "../components/DrugReport";
 import { InteractionReport } from "../components/InteractionReport";
 
+const mockSuggestions = { suggestions: [] as string[], loading: false };
+vi.mock("../hooks/useDrugSuggestions", () => ({
+  useDrugSuggestions: () => mockSuggestions,
+}));
+
 describe("MedicationInput", () => {
   it("calls onAdd with uppercased name when Add is clicked", async () => {
     const user = userEvent.setup();
@@ -100,6 +105,60 @@ describe("MedicationInput", () => {
 
     await user.click(screen.getByLabelText("Remove ASPIRIN"));
     expect(onRemove).toHaveBeenCalledWith("abc");
+  });
+
+  it("shows suggestion dropdown when suggestions are available", async () => {
+    const user = userEvent.setup();
+    mockSuggestions.suggestions = ["Aspirin", "Aspirin / Caffeine"];
+    mockSuggestions.loading = false;
+
+    render(
+      <MedicationInput medications={[]} onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+
+    const input = screen.getByPlaceholderText(/enter medication/i);
+    await user.type(input, "asp");
+
+    expect(screen.getByText("Aspirin")).toBeInTheDocument();
+    expect(screen.getByText("Aspirin / Caffeine")).toBeInTheDocument();
+
+    mockSuggestions.suggestions = [];
+  });
+
+  it("adds medication when a suggestion is clicked", async () => {
+    const user = userEvent.setup();
+    const onAdd = vi.fn();
+    mockSuggestions.suggestions = ["Aspirin"];
+    mockSuggestions.loading = false;
+
+    render(
+      <MedicationInput medications={[]} onAdd={onAdd} onRemove={vi.fn()} />
+    );
+
+    const input = screen.getByPlaceholderText(/enter medication/i);
+    await user.type(input, "asp");
+    await user.click(screen.getByText("Aspirin"));
+
+    expect(onAdd).toHaveBeenCalledWith("ASPIRIN");
+
+    mockSuggestions.suggestions = [];
+  });
+
+  it("shows loading indicator while fetching suggestions", async () => {
+    const user = userEvent.setup();
+    mockSuggestions.suggestions = [];
+    mockSuggestions.loading = true;
+
+    render(
+      <MedicationInput medications={[]} onAdd={vi.fn()} onRemove={vi.fn()} />
+    );
+
+    const input = screen.getByPlaceholderText(/enter medication/i);
+    await user.type(input, "asp");
+
+    expect(screen.getByText("Searching...")).toBeInTheDocument();
+
+    mockSuggestions.loading = false;
   });
 });
 
