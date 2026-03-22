@@ -1,16 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fetchDrugEvents, fetchDrugInteraction, sanitizeDrugName } from "../api";
+import { mockOkJson, createMockFetch } from "./helpers";
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const mockFetch = createMockFetch();
 
 beforeEach(() => {
   mockFetch.mockReset();
 });
-
-function mockOkJson(body: unknown) {
-  return { ok: true, json: async () => body };
-}
 
 describe("sanitizeDrugName", () => {
   it("removes double quotes", () => {

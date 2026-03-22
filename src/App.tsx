@@ -1,13 +1,16 @@
 import { useState } from "react";
-import type { Medication, DrugEventResult, DrugInteractionResult } from "./types";
+import type { Medication, DrugEventResult, DrugInteractionResult, DrugLabelResult } from "./types";
 import { fetchDrugEvents, fetchDrugInteraction } from "./api";
+import { fetchDrugLabel } from "./labelApi";
 import { MedicationInput } from "./components/MedicationInput";
 import { DrugReport } from "./components/DrugReport";
+import { DrugLabelReport } from "./components/DrugLabelReport";
 import { InteractionReport } from "./components/InteractionReport";
 
 function App() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [drugResults, setDrugResults] = useState<DrugEventResult[]>([]);
+  const [labelResults, setLabelResults] = useState<DrugLabelResult[]>([]);
   const [interactionResults, setInteractionResults] = useState<
     DrugInteractionResult[]
   >([]);
@@ -31,14 +34,17 @@ function App() {
     setLoading(true);
     setError(null);
     setDrugResults([]);
+    setLabelResults([]);
     setInteractionResults([]);
 
     try {
-      // Fetch individual drug reports (partial failures don't block results)
-      const drugSettled = await Promise.allSettled(
-        medications.map((m) => fetchDrugEvents(m.name))
-      );
+      // Fetch individual drug reports and labels in parallel (partial failures don't block results)
+      const [drugSettled, labelSettled] = await Promise.all([
+        Promise.allSettled(medications.map((m) => fetchDrugEvents(m.name))),
+        Promise.allSettled(medications.map((m) => fetchDrugLabel(m.name))),
+      ]);
       const drugs: DrugEventResult[] = [];
+      const labels: DrugLabelResult[] = [];
       const failures: string[] = [];
       for (const result of drugSettled) {
         if (result.status === "fulfilled") {
@@ -47,7 +53,15 @@ function App() {
           failures.push(result.reason?.message ?? "Unknown error");
         }
       }
+      for (const result of labelSettled) {
+        if (result.status === "fulfilled") {
+          labels.push(result.value);
+        } else {
+          failures.push(result.reason?.message ?? "Unknown error");
+        }
+      }
       setDrugResults(drugs);
+      setLabelResults(labels);
 
       // Fetch pairwise interactions
       if (medications.length >= 2) {
@@ -134,6 +148,23 @@ function App() {
           </section>
         )}
 
+        {labelResults.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              FDA Label Information
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Official side effects, warnings, and contraindications from
+              FDA-approved drug labels.
+            </p>
+            <div className="space-y-4">
+              {labelResults.map((result) => (
+                <DrugLabelReport key={result.drugName} result={result} />
+              ))}
+            </div>
+          </section>
+        )}
+
         {interactionResults.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
@@ -167,6 +198,15 @@ function App() {
               className="underline hover:text-gray-600 dark:hover:text-gray-400"
             >
               FDA Adverse Event Reporting System (FAERS)
+            </a>{" "}
+            and{" "}
+            <a
+              href="https://open.fda.gov/apis/drug/label/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-gray-600 dark:hover:text-gray-400"
+            >
+              FDA Drug Labeling
             </a>
             . This tool is for informational purposes only and does not
             constitute medical advice. Always consult your healthcare provider.
